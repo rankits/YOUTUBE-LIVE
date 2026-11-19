@@ -31,6 +31,8 @@ export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual;
     setProgress(0);
     setDone(null);
     try {
+      const { assertCanRecordShort } = await import("@/lib/media-record");
+      assertCanRecordShort();
       const { data } = await supabase.storage.from("interview-audio").createSignedUrl(audioPath, 600);
       if (!data?.signedUrl) throw new Error("Voice clip for this question is missing.");
       const { renderMcqShort } = await import("@/lib/shorts-render");
@@ -130,7 +132,7 @@ export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual;
               </Button>
               {video && (
                 <Button variant="outline" asChild>
-                  <a href={video.url} download={`short-q${mcq.number}.webm`}><Download /> Download</a>
+                  <a href={video.url} download={`short-q${mcq.number}.${video.blob.type?.includes("mp4") ? "mp4" : "webm"}`}><Download /> Download</a>
                 </Button>
               )}
             </div>

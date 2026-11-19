@@ -90,6 +90,13 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
 
   async function run() {
     if (!bank) return;
+    try {
+      const { assertCanRecordShort } = await import("@/lib/media-record");
+      assertCanRecordShort();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "This device cannot record Shorts.");
+      return;
+    }
     const wanted = mode === "schedule" ? Number(perDay) * Number(days) : Number(count);
     const pick = bank.pending.slice(0, wanted);
     if (!pick.length) { toast.error("No new questions left. Generate questions first."); return; }
@@ -131,7 +138,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
         if (mode === "download") {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = `short-q${p.number}.webm`;
+          a.download = `short-q${p.number}.${blob.type?.includes("mp4") ? "mp4" : "webm"}`;
           a.click();
           upd(i, { state: "done" }); ok++;
           continue;

@@ -1,11 +1,20 @@
 // Browser-only: renders a 1080x1920 MCQ Short (canvas + quiz audio) to a video Blob.
+import {
+  createShortRecorder,
+  scaleShortCanvas,
+  shortRenderProfile,
+  unlockAudioContext,
+  withScreenWakeLock,
+  SHORT_LOGICAL_H,
+  SHORT_LOGICAL_W,
+} from "./media-record";
 import { LETTERS, type McqVisual } from "./mcq-rules";
 import { hookFooter, hookText, shortTimeline } from "./shorts-rules";
 import type { CanvasPalette } from "./stage-themes";
 
 type Palette = CanvasPalette;
-const W = 1080;
-const H = 1920;
+const W = SHORT_LOGICAL_W;
+const H = SHORT_LOGICAL_H;
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number) {
   const words = text.split(/\s+/);
@@ -799,62 +808,69 @@ export async function renderHookThumbnail(o: { mcq: McqVisual; palette: Palette;
 }
 
 export async function renderMcqShort(o: { mcq: McqVisual; audioUrl: string; palette: Palette; brand: string; topic: string; hook?: string; language?: string; exam?: string; image?: HTMLImageElement | null; onProgress?: (f: number) => void }): Promise<Blob> {
-  const ab = await (await fetch(o.audioUrl)).arrayBuffer();
-  const actx = new AudioContext();
-  // Browsers start an AudioContext created after awaits as "suspended"; its clock then never moves.
-  await actx.resume().catch(() => {});
-  const buf = await actx.decodeAudioData(ab);
-  const tl = shortTimeline(buf.duration, o.mcq.revealAt);
-  if (!tl.fits) throw new Error("This question is too long for a Short (max 3 minutes).");
+  return withScreenWakeLock(async () => {
+    const profile = shortRenderProfile();
+    const ab = await (await fetch(o.audioUrl)).arrayBuffer();
+    const actx = new AudioContext();
+    // Browsers start an AudioContext created after awaits as "suspended"; its clock then never moves.
+    await unlockAudioContext(actx);
+    const buf = await actx.decodeAudioData(ab);
+    await unlockAudioContext(actx);
+    const tl = shortTimeline(buf.duration, o.mcq.revealAt);
+    if (!tl.fits) throw new Error("This question is too long for a Short (max 3 minutes).");
 
-  const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d")!;
-  await loadShortFonts();
-  const dest = actx.createMediaStreamDestination();
-  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const mime = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((m) => MediaRecorder.isTypeSupported(m));
-  const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 6_000_000 });
-  const chunks: Blob[] = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const done = new Promise<void>((r) => (rec.onstop = () => r()));
+    const canvas = document.createElement("canvas");
+    canvas.width = profile.width;
+    canvas.height = profile.height;
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(canvas);
+    try {
+      const ctx = canvas.getContext("2d")!;
+      scaleShortCanvas(ctx, profile);
+      await loadShortFonts();
+      const dest = actx.createMediaStreamDestination();
+      const rec = createShortRecorder(canvas, dest, profile);
 
-  const lang = o.language ?? "english";
-  const hook = o.hook || hookText(o.mcq.number, lang);
-  const footer = hookFooter(lang);
-  const draw = (t: number) =>
-    t < tl.start
-      ? drawHookFrame(ctx, { mcq: o.mcq, t, p: o.palette, brand: o.brand, topic: o.topic, hook, footer })
-      : drawShortFrame(ctx, { mcq: o.mcq, t: t - tl.start, split: tl.split, revealTime: tl.revealTime, p: o.palette, brand: o.brand, topic: o.topic, exam: o.exam, image: o.image });
-  draw(0);
-  rec.start(500);
-  const t0 = actx.currentTime + 0.1;
-  const a = actx.createBufferSource();
-  a.buffer = buf;
-  a.connect(dest);
-  a.start(t0 + tl.start, 0, tl.split);
-  const b = actx.createBufferSource();
-  b.buffer = buf;
-  b.connect(dest);
-  b.start(t0 + tl.start + tl.revealTime, tl.split);
+      const lang = o.language ?? "english";
+      const hook = o.hook || hookText(o.mcq.number, lang);
+      const footer = hookFooter(lang);
+      const draw = (t: number) =>
+        t < tl.start
+          ? drawHookFrame(ctx, { mcq: o.mcq, t, p: o.palette, brand: o.brand, topic: o.topic, hook, footer })
+          : drawShortFrame(ctx, { mcq: o.mcq, t: t - tl.start, split: tl.split, revealTime: tl.revealTime, p: o.palette, brand: o.brand, topic: o.topic, exam: o.exam, image: o.image });
+      draw(0);
+      rec.start();
+      const t0 = actx.currentTime + 0.1;
+      const a = actx.createBufferSource();
+      a.buffer = buf;
+      a.connect(dest);
+      a.start(t0 + tl.start, 0, tl.split);
+      const b = actx.createBufferSource();
+      b.buffer = buf;
+      b.connect(dest);
+      b.start(t0 + tl.start + tl.revealTime, tl.split);
 
-  const wall0 = performance.now();
-  await new Promise<void>((resolve) => {
-    const iv = setInterval(() => {
-      // Fall back to the wall clock if the audio clock is stalled, so the render always finishes.
-      const wall = (performance.now() - wall0) / 1000 - 0.1;
-      const t = Math.max(0, actx.state === "running" ? actx.currentTime - t0 : wall, wall - 2);
-      draw(t);
-      o.onProgress?.(Math.min(1, t / tl.total));
-      if (t >= tl.total) {
-        clearInterval(iv);
-        resolve();
-      }
-    }, 1000 / 30);
+      const wall0 = performance.now();
+      const frameMs = 1000 / profile.fps;
+      await new Promise<void>((resolve) => {
+        const iv = setInterval(() => {
+          // Fall back to the wall clock if the audio clock is stalled, so the render always finishes.
+          const wall = (performance.now() - wall0) / 1000 - 0.1;
+          const t = Math.max(0, actx.state === "running" ? actx.currentTime - t0 : wall, wall - 2);
+          draw(t);
+          o.onProgress?.(Math.min(1, t / tl.total));
+          if (t >= tl.total) {
+            clearInterval(iv);
+            resolve();
+          }
+        }, frameMs);
+      });
+      const blob = await rec.stop();
+      await actx.close();
+      return blob;
+    } finally {
+      canvas.remove();
+    }
   });
-  rec.stop();
-  await done;
-  await actx.close();
-  return new Blob(chunks, { type: mime?.split(";")[0] ?? "video/webm" });
 }

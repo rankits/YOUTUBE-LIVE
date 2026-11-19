@@ -1,9 +1,18 @@
 // Browser-only: Job Alert Short (poster + photo mix) + clickbait thumbnail.
+import {
+  createShortRecorder,
+  scaleShortCanvas,
+  shortRenderProfile,
+  unlockAudioContext,
+  withScreenWakeLock,
+  SHORT_LOGICAL_H,
+  SHORT_LOGICAL_W,
+} from "./media-record";
 import { loadShortFonts } from "./shorts-render";
 import type { JobFacts } from "./news-rules";
 
-const W = 1080;
-const H = 1920;
+const W = SHORT_LOGICAL_W;
+const H = SHORT_LOGICAL_H;
 const RED = "#dc1428";
 const NAVY = "#0b1736";
 const YELLOW = "#ffd400";
@@ -626,45 +635,53 @@ export async function renderNewsThumbnail(o: NewsShortInput): Promise<Blob> {
 }
 
 export async function renderNewsShort(o: NewsShortInput & { audioUrl: string; onProgress?: (f: number) => void }): Promise<Blob> {
-  const ab = await (await fetch(o.audioUrl)).arrayBuffer();
-  const actx = new AudioContext();
-  await actx.resume().catch(() => {});
-  const buf = await actx.decodeAudioData(ab);
-  const total = Math.min(178, buf.duration + 1.5);
-  const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d")!;
-  await loadShortFonts();
-  const dest = actx.createMediaStreamDestination();
-  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const mime = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((m) => MediaRecorder.isTypeSupported(m));
-  const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 6_000_000 });
-  const chunks: Blob[] = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const done = new Promise<void>((r) => (rec.onstop = () => r()));
-  drawNewsFrame(ctx, o, 0, total);
-  rec.start(500);
-  const t0 = actx.currentTime + 0.1;
-  const src = actx.createBufferSource();
-  src.buffer = buf;
-  src.connect(dest);
-  src.start(t0 + 0.3);
-  const wall0 = performance.now();
-  await new Promise<void>((resolve) => {
-    const iv = setInterval(() => {
-      const wall = (performance.now() - wall0) / 1000 - 0.1;
-      const t = Math.max(0, actx.state === "running" ? actx.currentTime - t0 : wall, wall - 2);
-      drawNewsFrame(ctx, o, t, total);
-      o.onProgress?.(Math.min(1, t / total));
-      if (t >= total) {
-        clearInterval(iv);
-        resolve();
-      }
-    }, 1000 / 30);
+  return withScreenWakeLock(async () => {
+    const profile = shortRenderProfile();
+    const ab = await (await fetch(o.audioUrl)).arrayBuffer();
+    const actx = new AudioContext();
+    await unlockAudioContext(actx);
+    const buf = await actx.decodeAudioData(ab);
+    await unlockAudioContext(actx);
+    const total = Math.min(178, buf.duration + 1.5);
+    const canvas = document.createElement("canvas");
+    canvas.width = profile.width;
+    canvas.height = profile.height;
+    // Keep canvas in DOM — helps some mobile browsers actually emit video frames.
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(canvas);
+    try {
+      const ctx = canvas.getContext("2d")!;
+      scaleShortCanvas(ctx, profile);
+      await loadShortFonts();
+      const dest = actx.createMediaStreamDestination();
+      const rec = createShortRecorder(canvas, dest, profile);
+      drawNewsFrame(ctx, o, 0, total);
+      rec.start();
+      const t0 = actx.currentTime + 0.1;
+      const src = actx.createBufferSource();
+      src.buffer = buf;
+      src.connect(dest);
+      src.start(t0 + 0.3);
+      const wall0 = performance.now();
+      const frameMs = 1000 / profile.fps;
+      await new Promise<void>((resolve) => {
+        const iv = setInterval(() => {
+          const wall = (performance.now() - wall0) / 1000 - 0.1;
+          const t = Math.max(0, actx.state === "running" ? actx.currentTime - t0 : wall, wall - 2);
+          drawNewsFrame(ctx, o, t, total);
+          o.onProgress?.(Math.min(1, t / total));
+          if (t >= total) {
+            clearInterval(iv);
+            resolve();
+          }
+        }, frameMs);
+      });
+      const blob = await rec.stop();
+      await actx.close();
+      return blob;
+    } finally {
+      canvas.remove();
+    }
   });
-  rec.stop();
-  await done;
-  await actx.close();
-  return new Blob(chunks, { type: mime?.split(";")[0] || "video/webm" });
 }

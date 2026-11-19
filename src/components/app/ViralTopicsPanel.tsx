@@ -207,6 +207,8 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
   };
 
   const buildClip = async (item: ViralTopic, onStep?: (s: string) => void, onSub?: (n: number) => void): Promise<BuiltClip> => {
+    const { assertCanRecordShort } = await import("@/lib/media-record");
+    assertCanRecordShort();
     onStep?.("Writing script & voice…");
     const clip = await prepFn({
       data: {
@@ -611,7 +613,7 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
                 <Trash2 /> Discard
               </Button>
               <Button variant="outline" className="w-full sm:w-auto" asChild>
-                <a href={preview.url} download="viral-topic-preview.webm">
+                <a href={preview.url} download={`viral-topic-preview.${preview.blob.type?.includes("mp4") ? "mp4" : "webm"}`}>
                   <Download /> Download
                 </a>
               </Button>
