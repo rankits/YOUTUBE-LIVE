@@ -52,13 +52,8 @@ export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual;
     try {
       const { data: s } = await supabase.auth.getSession();
       const qs = new URLSearchParams({ title, description: desc, privacy, tags: meta.tags.join(",") });
-      const res = await fetch(`/api/youtube/upload-short?${qs}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${s.session?.access_token ?? ""}`, "Content-Type": video.blob.type || "video/webm" },
-        body: video.blob,
-      });
-      const j = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !j.url) throw new Error(j.error ?? "Upload failed");
+      const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
+      const j = await uploadShortVideo({ token: s.session?.access_token ?? "", blob: video.blob, searchParams: qs });
       setDone(j.url);
       toast.success("Short uploaded to YouTube");
     } catch (e) {

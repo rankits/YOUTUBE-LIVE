@@ -274,19 +274,8 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
       tags: built.tags.join(","),
       ...(slot ? { publishAt: slot.toISOString() } : {}),
     });
-    const res = await fetch(`/api/youtube/upload-short?${qs}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": built.blob.type || "video/webm" },
-      body: built.blob,
-      signal: AbortSignal.timeout(180_000),
-    });
-    const j = (await res.json().catch(() => ({ error: `Server error [${res.status}]` }))) as {
-      id?: string;
-      url?: string;
-      error?: string;
-      slot?: number;
-    };
-    if (!res.ok || !j.url || !j.id) throw new Error(j.error ?? "Upload failed");
+    const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
+    const j = await uploadShortVideo({ token, blob: built.blob, searchParams: qs, signal: AbortSignal.timeout(180_000) });
     if (slot) localStorage.setItem(SLOTS_KEY, JSON.stringify([...taken, slot.getTime()]));
     const nextUsed = [...(read(USED_KEY) as string[]), built.item.link].slice(-300);
     localStorage.setItem(USED_KEY, JSON.stringify(nextUsed));

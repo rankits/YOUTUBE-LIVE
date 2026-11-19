@@ -23,14 +23,14 @@ export function isSafariBrowser() {
   return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 }
 
-/** Smaller canvas + bitrate on phones so 9:16 Shorts can finish without OOM. */
+/** Smaller canvas + bitrate so Shorts finish on phones and stay upload-friendly. */
 export function shortRenderProfile(): ShortRenderProfile {
   const mobile = isMobileBrowser();
   if (!mobile) {
-    return { width: SHORT_LOGICAL_W, height: SHORT_LOGICAL_H, fps: 30, videoBitsPerSecond: 6_000_000, timesliceMs: 500, mobile: false };
+    // 720p @ ~2Mbps ≈ 15MB/min — safer for staging + YouTube transfer on Hobby.
+    return { width: 720, height: 1280, fps: 30, videoBitsPerSecond: 2_000_000, timesliceMs: 500, mobile: false };
   }
-  // 720×1280 is enough for Shorts feed and much safer on phones.
-  return { width: 720, height: 1280, fps: 24, videoBitsPerSecond: 2_500_000, timesliceMs: 1000, mobile: true };
+  return { width: 720, height: 1280, fps: 24, videoBitsPerSecond: 1_500_000, timesliceMs: 1000, mobile: true };
 }
 
 /** Prefer MP4 on Safari/iOS; WebM elsewhere. */

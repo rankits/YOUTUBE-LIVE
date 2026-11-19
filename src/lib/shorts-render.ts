@@ -76,11 +76,14 @@ export async function loadShortImage(
   const mode = opts?.mode === "real" ? "&mode=real" : "";
   const url = `/api/short-image?q=${encodeURIComponent(question.slice(0, 200))}&seed=${seed}${mode}`;
   const end = Date.now() + deadlineMs;
-  const maxAttempts = opts?.mode === "real" ? 2 : 4;
+  const maxAttempts = opts?.mode === "real" ? 2 : 2;
   for (let attempt = 0; attempt < maxAttempts && Date.now() < end; attempt++) {
-    let wait = opts?.mode === "real" ? 4_000 : 15_000;
+    let wait = opts?.mode === "real" ? 2_000 : 3_000;
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(Math.max(1000, end - Date.now())) });
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(Math.min(25_000, Math.max(1000, end - Date.now()))),
+      });
       if (res.ok) {
         const blobUrl = URL.createObjectURL(await res.blob());
         return await new Promise<HTMLImageElement | null>((resolve) => {
@@ -91,8 +94,9 @@ export async function loadShortImage(
         });
       }
       if (res.status === 401 || res.status === 400) return null;
+      // 5xx / busy: short retry then give up so Shorts don't hang.
       const j = (await res.json().catch(() => ({}))) as { retryAfter?: number };
-      if (j.retryAfter) wait = Math.min(50, j.retryAfter + 1) * 1000;
+      if (j.retryAfter) wait = Math.min(8, j.retryAfter + 1) * 1000;
     } catch {
       /* network hiccup: retry below */
     }

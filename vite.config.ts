@@ -18,5 +18,11 @@ export default defineConfig({
   // Pin Vercel for deploy (local/Lovable Cloudflare still works if you change this back).
   nitro: {
     preset: "vercel",
+    vercel: {
+      functions: {
+        maxDuration: 60,
+        memory: 1024,
+      },
+    },
   },
 });

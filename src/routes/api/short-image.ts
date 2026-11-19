@@ -12,7 +12,7 @@ async function cloudflareFluxJpeg(prompt: string, seed: number): Promise<Respons
   const apiToken = process.env["CLOUDFLARE_API_TOKEN"]?.trim();
   if (!accountId || !apiToken) return null;
 
-  const steps = Math.min(8, Math.max(4, Number(process.env["CLOUDFLARE_FLUX_STEPS"]) || 6));
+  const steps = Math.min(6, Math.max(4, Number(process.env["CLOUDFLARE_FLUX_STEPS"]) || 4));
   const res = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`,
     {
@@ -21,8 +21,8 @@ async function cloudflareFluxJpeg(prompt: string, seed: number): Promise<Respons
         Authorization: `Bearer ${apiToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt: prompt.slice(0, 2048), seed, steps }),
-      signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify({ prompt: prompt.slice(0, 1200), seed, steps }),
+      signal: AbortSignal.timeout(18_000),
     },
   );
   if (!res.ok) return null;
@@ -36,9 +36,10 @@ async function cloudflareFluxJpeg(prompt: string, seed: number): Promise<Respons
 }
 
 async function pollinationsImage(prompt: string, seed: number, width: number, height: number): Promise<Response | null> {
+  // No enhance= — faster and less likely to hit Vercel function timeouts.
   const res = await fetch(
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}&enhance=true`,
-    { signal: AbortSignal.timeout(60_000) },
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 400))}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
+    { signal: AbortSignal.timeout(20_000) },
   );
   const type = res.headers.get("content-type") ?? "";
   if (res.ok && type.startsWith("image/")) {
@@ -47,6 +48,24 @@ async function pollinationsImage(prompt: string, seed: number, width: number, he
     });
   }
   return null;
+}
+
+/** Last-resort graphic so Shorts still render when AI/stock image APIs are down. */
+function placeholderSvg(q: string, seed: number): Response {
+  const hues = [210, 18, 160, 280, 40];
+  const h = hues[seed % hues.length]!;
+  const safe = q.replace(/[<>&"']/g, "").slice(0, 48);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="hsl(${h} 55% 22%)"/><stop offset="100%" stop-color="hsl(${(h + 40) % 360} 50% 12%)"/>
+  </linearGradient></defs>
+  <rect width="720" height="1280" fill="url(#g)"/>
+  <text x="36" y="120" fill="#ffd400" font-family="Arial,sans-serif" font-size="28" font-weight="700">SHORTS</text>
+  <text x="36" y="640" fill="#ffffff" font-family="Arial,sans-serif" font-size="36" font-weight="700">${safe}</text>
+</svg>`;
+  return new Response(svg, {
+    headers: { "Content-Type": "image/svg+xml", "Cache-Control": "private, max-age=600", "X-Image-Source": "placeholder" },
+  });
 }
 
 export const Route = createFileRoute("/api/short-image")({
@@ -68,8 +87,9 @@ export const Route = createFileRoute("/api/short-image")({
 
         const mode = (params.get("mode") ?? "").toLowerCase();
         const landscape = params.get("landscape") === "1";
-        const width = landscape ? 960 : 1080;
-        const height = landscape ? 540 : 1920;
+        // Smaller than 1080×1920 so generation finishes inside Vercel time limits.
+        const width = landscape ? 960 : 720;
+        const height = landscape ? 540 : 1280;
 
         try {
           if (mode === "real" || mode === "stock") {
@@ -97,16 +117,10 @@ export const Route = createFileRoute("/api/short-image")({
           const poll = await pollinationsImage(prompt, seed, width, height).catch(() => null);
           if (poll) return poll;
 
-          return Response.json(
-            {
-              error: process.env["CLOUDFLARE_ACCOUNT_ID"]
-                ? "Image service busy. Try again."
-                : "Add CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN in .env (Workers AI), or Pollinations is down.",
-            },
-            { status: 502 },
-          );
+          // Soft fallback — never 502 the UI; Shorts can still render with a graphic.
+          return placeholderSvg(q, seed);
         } catch {
-          return Response.json({ error: "Image service did not answer." }, { status: 504 });
+          return placeholderSvg(q, seed);
         }
       },
     },

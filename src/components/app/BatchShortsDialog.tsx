@@ -48,11 +48,9 @@ export function BatchShortsDialog({ items, theme }: { items: Item[]; theme?: str
         upd(i, { state: "upload" });
         const { data: s } = await supabase.auth.getSession();
         const qs = new URLSearchParams({ title: meta.title, description: meta.description, privacy: "public", tags: meta.tags.join(","), publishAt: slots[i]!.toISOString() });
-        const res = await fetch(`/api/youtube/upload-short?${qs}`, { method: "POST", headers: { Authorization: `Bearer ${s.session?.access_token ?? ""}`, "Content-Type": blob.type || "video/webm" }, body: blob });
-        const j = (await res.json()) as { url?: string; error?: string };
-        if (!res.ok || !j.url) throw new Error(j.error ?? "Upload failed");
+        const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
+        const j = await uploadShortVideo({ token: s.session?.access_token ?? "", blob, searchParams: qs });
         upd(i, { state: "done", url: j.url }); ok++;
-        if (/quota/i.test(j.error ?? "")) break;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         upd(i, { state: "fail", note: msg });

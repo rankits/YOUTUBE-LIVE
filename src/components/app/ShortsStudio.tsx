@@ -152,9 +152,21 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
           tags: clip.meta.tags.join(","),
           ...(mode === "schedule" ? { publishAt: slots[i]!.toISOString() } : {}),
         });
-        const res = await fetch(`/api/youtube/upload-short?${qs}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": blob.type || "video/webm" }, body: blob, signal: AbortSignal.timeout(180_000) }).catch((e) => { throw new Error(e?.name === "TimeoutError" ? "YouTube upload timed out (180s) — slow internet, press Retry." : `Upload request fail: ${e?.message ?? e}`); });
-        const j = (await res.json().catch(() => ({ error: `Server sent a bad reply [${res.status}]` }))) as { id?: string; url?: string; error?: string; slot?: number };
-        if (!res.ok || !j.url || !j.id) throw new Error(j.error ?? "Upload failed");
+        const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
+        const j = await uploadShortVideo({
+          token,
+          blob,
+          searchParams: qs,
+          signal: AbortSignal.timeout(180_000),
+        }).catch((e) => {
+          throw new Error(
+            e?.name === "TimeoutError" || /timed out|TimeoutError/i.test(String(e?.message ?? e))
+              ? "YouTube upload timed out (180s) — slow internet, press Retry."
+              : e instanceof Error
+                ? e.message
+                : `Upload request fail: ${e}`,
+          );
+        });
         await markFn({ data: { questionId: p.id, url: j.url, publishAt: mode === "schedule" ? slots[i]!.toISOString() : null } }).catch(() => {});
         // Custom thumbnail = the hook poster. Needs a verified channel; a failure never fails the Short.
         let note: string | undefined;
