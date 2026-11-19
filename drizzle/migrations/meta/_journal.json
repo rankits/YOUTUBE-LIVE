@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794565393378,
+      "tag": "0000_restore_new_user_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794568757676,
+      "tag": "0001_add_short_url_to_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794570312832,
+      "tag": "0002_short_publish_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794635128054,
+      "tag": "0003_youtube_upload_pool",
+      "breakpoints": true
+    }
+  ]
+}

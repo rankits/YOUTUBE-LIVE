@@ -1,0 +1,1 @@
+ALTER TABLE public.interview_questions ADD COLUMN IF NOT EXISTS short_publish_at timestamptz;
