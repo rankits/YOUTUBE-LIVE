@@ -19,6 +19,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedIntegrationsRouteImport } from './routes/_authenticated/integrations'
 import { Route as AuthenticatedJobAlertsRouteImport } from './routes/_authenticated/job-alerts'
 import { Route as AuthenticatedLiveBroadcastRouteImport } from './routes/_authenticated/live-broadcast'
+import { Route as AuthenticatedLiveMonitorRouteImport } from './routes/_authenticated/live-monitor'
 import { Route as AuthenticatedObsRouteImport } from './routes/_authenticated/obs'
 import { Route as AuthenticatedRecordingsRouteImport } from './routes/_authenticated/recordings'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
@@ -86,6 +87,12 @@ const AuthenticatedLiveBroadcastRoute =
   AuthenticatedLiveBroadcastRouteImport.update({
     id: '/live-broadcast',
     path: '/live-broadcast',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedLiveMonitorRoute =
+  AuthenticatedLiveMonitorRouteImport.update({
+    id: '/live-monitor',
+    path: '/live-monitor',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedObsRoute = AuthenticatedObsRouteImport.update({
@@ -192,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof AuthenticatedIntegrationsRoute
   '/job-alerts': typeof AuthenticatedJobAlertsRoute
   '/live-broadcast': typeof AuthenticatedLiveBroadcastRoute
+  '/live-monitor': typeof AuthenticatedLiveMonitorRoute
   '/obs': typeof AuthenticatedObsRoute
   '/recordings': typeof AuthenticatedRecordingsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
@@ -220,6 +228,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof AuthenticatedIntegrationsRoute
   '/job-alerts': typeof AuthenticatedJobAlertsRoute
   '/live-broadcast': typeof AuthenticatedLiveBroadcastRoute
+  '/live-monitor': typeof AuthenticatedLiveMonitorRoute
   '/obs': typeof AuthenticatedObsRoute
   '/recordings': typeof AuthenticatedRecordingsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
@@ -250,6 +259,7 @@ export interface FileRoutesById {
   '/_authenticated/integrations': typeof AuthenticatedIntegrationsRoute
   '/_authenticated/job-alerts': typeof AuthenticatedJobAlertsRoute
   '/_authenticated/live-broadcast': typeof AuthenticatedLiveBroadcastRoute
+  '/_authenticated/live-monitor': typeof AuthenticatedLiveMonitorRoute
   '/_authenticated/obs': typeof AuthenticatedObsRoute
   '/_authenticated/recordings': typeof AuthenticatedRecordingsRoute
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
@@ -280,6 +290,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/job-alerts'
     | '/live-broadcast'
+    | '/live-monitor'
     | '/obs'
     | '/recordings'
     | '/schedule'
@@ -308,6 +319,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/job-alerts'
     | '/live-broadcast'
+    | '/live-monitor'
     | '/obs'
     | '/recordings'
     | '/schedule'
@@ -337,6 +349,7 @@ export interface FileRouteTypes {
     | '/_authenticated/integrations'
     | '/_authenticated/job-alerts'
     | '/_authenticated/live-broadcast'
+    | '/_authenticated/live-monitor'
     | '/_authenticated/obs'
     | '/_authenticated/recordings'
     | '/_authenticated/schedule'
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       path: '/live-broadcast'
       fullPath: '/live-broadcast'
       preLoaderRoute: typeof AuthenticatedLiveBroadcastRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/live-monitor': {
+      id: '/_authenticated/live-monitor'
+      path: '/live-monitor'
+      fullPath: '/live-monitor'
+      preLoaderRoute: typeof AuthenticatedLiveMonitorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/obs': {
@@ -570,6 +590,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIntegrationsRoute: typeof AuthenticatedIntegrationsRoute
   AuthenticatedJobAlertsRoute: typeof AuthenticatedJobAlertsRoute
   AuthenticatedLiveBroadcastRoute: typeof AuthenticatedLiveBroadcastRoute
+  AuthenticatedLiveMonitorRoute: typeof AuthenticatedLiveMonitorRoute
   AuthenticatedObsRoute: typeof AuthenticatedObsRoute
   AuthenticatedRecordingsRoute: typeof AuthenticatedRecordingsRoute
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
@@ -590,6 +611,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIntegrationsRoute: AuthenticatedIntegrationsRoute,
   AuthenticatedJobAlertsRoute: AuthenticatedJobAlertsRoute,
   AuthenticatedLiveBroadcastRoute: AuthenticatedLiveBroadcastRoute,
+  AuthenticatedLiveMonitorRoute: AuthenticatedLiveMonitorRoute,
   AuthenticatedObsRoute: AuthenticatedObsRoute,
   AuthenticatedRecordingsRoute: AuthenticatedRecordingsRoute,
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
@@ -621,13 +643,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

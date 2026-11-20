@@ -18,6 +18,7 @@ import {
   Menu,
   Newspaper,
   Flame,
+  Radar,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +37,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: "/job-alerts", label: "Job Alerts", icon: Newspaper },
   { to: "/viral-topics", label: "Viral Topics", icon: Flame },
+  { to: "/live-monitor", label: "Live Monitor", icon: Radar },
   { to: "/youtube", label: "YouTube", icon: Youtube },
   { to: "/agents", label: "AI Agents", icon: Bot },
   { to: "/settings", label: "Settings", icon: Settings },
