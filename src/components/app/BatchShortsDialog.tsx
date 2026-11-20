@@ -4,6 +4,7 @@ import { CalendarClock, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { McqVisual } from "@/lib/mcq-rules";
+import { freshToken } from "@/lib/fresh-token";
 import { buildShortMeta, planSlots } from "@/lib/shorts-rules";
 import { SHORT_THEMES, shortThemeForClip, type ShortThemeId } from "@/lib/stage-themes";
 import { Button } from "@/components/ui/button";
@@ -46,20 +47,22 @@ export function BatchShortsDialog({ items, theme }: { items: Item[]; theme?: str
         const meta = buildShortMeta({ question: p.mcq.question, options: p.mcq.options, answer: p.mcq.answer, topic: p.topic, number: p.mcq.number, language: "english" });
         const blob = await renderMcqShort({ mcq: p.mcq, audioUrl: data.signedUrl, palette: shortThemeForClip(themeId, p.mcq.number), brand, topic: p.topic, hook: meta.hook, onProgress: setSub });
         upd(i, { state: "upload" });
-        const { data: s } = await supabase.auth.getSession();
+        const token = await freshToken();
         const qs = new URLSearchParams({ title: meta.title, description: meta.description, privacy: "public", tags: meta.tags.join(","), publishAt: slots[i]!.toISOString() });
         const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
-        const j = await uploadShortVideo({ token: s.session?.access_token ?? "", blob, searchParams: qs });
+        const j = await uploadShortVideo({ token, blob, searchParams: qs });
         upd(i, { state: "done", url: j.url }); ok++;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         upd(i, { state: "fail", note: msg });
+        toast.error(`Q${p.mcq.number} failed`, { description: msg });
         if (/quota/i.test(msg)) { toast.error("YouTube daily quota finished. Try again tomorrow."); break; }
       }
     }
     setStart((s) => s + pick.length);
     setBusy(false);
-    toast.success(`${ok} Shorts scheduled on YouTube`);
+    if (ok > 0) toast.success(`${ok} Short(s) scheduled on YouTube`);
+    else toast.error("No Shorts uploaded — check the errors above.");
   }
 
   const icon = (r: Row) => r.state === "done" ? <CheckCircle2 className="h-4 w-4 text-success" /> : r.state === "fail" ? <XCircle className="h-4 w-4 text-destructive" /> : r.state === "wait" ? <CalendarClock className="h-4 w-4 text-muted-foreground" /> : <Loader2 className="h-4 w-4 animate-spin text-primary" />;

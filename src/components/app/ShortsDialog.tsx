@@ -50,10 +50,11 @@ export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual;
     if (!video) return;
     setUploading(true);
     try {
-      const { data: s } = await supabase.auth.getSession();
+      const { freshToken } = await import("@/lib/fresh-token");
+      const token = await freshToken();
       const qs = new URLSearchParams({ title, description: desc, privacy, tags: meta.tags.join(",") });
       const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
-      const j = await uploadShortVideo({ token: s.session?.access_token ?? "", blob: video.blob, searchParams: qs });
+      const j = await uploadShortVideo({ token, blob: video.blob, searchParams: qs });
       setDone(j.url);
       toast.success("Short uploaded to YouTube");
     } catch (e) {

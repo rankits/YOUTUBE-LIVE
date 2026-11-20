@@ -308,7 +308,9 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
       setPreview({ ...built, url: URL.createObjectURL(built.blob) });
       toast.success("Preview ready — check, then Approve to upload.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.error("Could not make Short", { description: msg });
     } finally {
       setBusy(null);
       setStep("");
@@ -330,7 +332,9 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
       toast.success(result.when === "now" ? "Uploaded!" : `Scheduled for ${result.when}`);
       clearPreview();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.error("Upload failed", { description: msg });
     } finally {
       setUploading(false);
       setStep("");

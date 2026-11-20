@@ -18,6 +18,7 @@ export async function uploadShortVideo(opts: {
   searchParams: URLSearchParams;
   signal?: AbortSignal;
 }): Promise<UploadShortResult> {
+  if (!opts.token.trim()) throw new Error("Sign-in required — please sign in again.");
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData.user) throw new Error("Sign in first.");
 

@@ -168,9 +168,14 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
                 : `Upload request fail: ${e}`,
           );
         });
-        await markFn({ data: { questionId: p.id, url: j.url, publishAt: mode === "schedule" ? slots[i]!.toISOString() : null } }).catch(() => {});
-        // Custom thumbnail = the hook poster. Needs a verified channel; a failure never fails the Short.
         let note: string | undefined;
+        try {
+          await markFn({ data: { questionId: p.id, url: j.url, publishAt: mode === "schedule" ? slots[i]!.toISOString() : null } });
+        } catch (e) {
+          note = `Uploaded, but bank mark failed: ${e instanceof Error ? e.message : String(e)} — may show as pending again.`;
+          toast.error("Short uploaded, but could not mark question done", { description: note });
+        }
+        // Custom thumbnail = the hook poster. Needs a verified channel; a failure never fails the Short.
         if (!thumbOff) {
           try {
             const { renderHookThumbnail } = await import("@/lib/shorts-render");

@@ -6,7 +6,12 @@ export async function freshToken(): Promise<string> {
   let session = data.session;
   if (!session || (session.expires_at ?? 0) * 1000 - Date.now() < 120_000) {
     const r = await supabase.auth.refreshSession();
+    if (r.error) {
+      throw new Error("Sign-in expired — please sign in again.");
+    }
     session = r.data.session ?? session;
   }
-  return session?.access_token ?? "";
+  const token = session?.access_token ?? "";
+  if (!token) throw new Error("Sign-in required — please sign in again.");
+  return token;
 }

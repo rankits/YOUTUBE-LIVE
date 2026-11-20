@@ -5,9 +5,10 @@ import { AppShell } from "@/components/app/AppShell";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw redirect({ to: "/auth" });
-    return { user: data.session.user };
+    // Validate with the server — getSession() alone can trust a stale local session.
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
   },
   component: AppShell,
 });

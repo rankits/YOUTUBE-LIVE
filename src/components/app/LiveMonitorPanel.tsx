@@ -61,6 +61,37 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
   const pageTokens = useRef<Record<string, string | null>>({});
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  const lastPollToast = useRef(0);
+
+  // Restore monitor list after refresh (highlights kept light — no File objects).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("live-monitor-sessions");
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Session[];
+      if (Array.isArray(saved) && saved.length) {
+        setSessions(
+          saved.map((s) => ({
+            ...s,
+            recording: null,
+            rightsOk: false,
+            status: s.isLive && s.activeLiveChatId ? "polling" : s.status === "polling" ? "idle" : s.status,
+          })),
+        );
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const slim = sessions.map(({ recording: _r, ...rest }) => ({ ...rest, recording: null, rightsOk: false }));
+      sessionStorage.setItem("live-monitor-sessions", JSON.stringify(slim));
+    } catch {
+      /* quota */
+    }
+  }, [sessions]);
 
   const addSession = async () => {
     if (!connected) {
@@ -132,13 +163,14 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
       );
       return res.pollingIntervalMs;
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       setSessions((all) =>
-        all.map((s) =>
-          s.id === session.id
-            ? { ...s, status: "error", error: e instanceof Error ? e.message : String(e) }
-            : s,
-        ),
+        all.map((s) => (s.id === session.id ? { ...s, status: "error", error: msg } : s)),
       );
+      if (Date.now() - lastPollToast.current > 20_000) {
+        lastPollToast.current = Date.now();
+        toast.error("Live chat poll failed", { description: msg });
+      }
       return 15_000;
     }
   }, []);
