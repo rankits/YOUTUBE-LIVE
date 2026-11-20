@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VoiceSelectItems } from "@/components/app/VoiceOptions";
+import { DailyAutoBar } from "@/components/app/DailyAutoBar";
 
 const USED_KEY = "news-shorts-used";
 const SLOTS_KEY = "news-shorts-slots";
@@ -122,7 +123,7 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
     setVoiceId(next);
   }, [voiceProvider, voiceOptions, selectedAgent?.voice_id]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<NewsItem[]> => {
     setLoading(true); setError(null);
     const cached = (() => { try { return JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as { at: number; items: NewsItem[] } | null; } catch { return null; } })();
     try {
@@ -130,12 +131,23 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
       if (r.items.length) {
         setItems(r.items); setStatus(`Updated ${format(new Date(), "h:mm a")} · ${r.sources}`);
         localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), items: r.items }));
-      } else if (cached?.items.length) {
+        return r.items;
+      }
+      if (cached?.items.length) {
         setItems(cached.items); setStatus(`Saved alerts from ${format(cached.at, "d MMM, h:mm a")}`); setError(r.error);
-      } else setError(r.error);
+        return cached.items;
+      }
+      setError(r.error);
+      return [];
     } catch (e) {
-      if (cached?.items.length) { setItems(cached.items); setStatus(`Saved alerts from ${format(cached.at, "d MMM, h:mm a")}`); }
+      if (cached?.items.length) {
+        setItems(cached.items);
+        setStatus(`Saved alerts from ${format(cached.at, "d MMM, h:mm a")}`);
+        setError(`Could not refresh the news (${e instanceof Error ? e.message : String(e)}). Press Refresh to try again.`);
+        return cached.items;
+      }
       setError(`Could not refresh the news (${e instanceof Error ? e.message : String(e)}). Press Refresh to try again.`);
+      return [];
     } finally { setLoading(false); }
   }, [listFn]);
 
@@ -282,12 +294,13 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
     void renderPreview(pick);
   };
 
-  /** Build + upload up to 8 Shorts into the next daily schedule slots. */
-  const fillDailySlots = async () => {
-    if (!connected) { toast.error("Connect YouTube first."); return; }
-    if (preview || busy || uploading) { toast.error("Finish or discard the current preview first."); return; }
-    const picks = pickViralNewsBatch(items, used, 8);
-    if (!picks.length) { toast.error("No unused alerts — press Refresh."); return; }
+  /** Build + upload Shorts into the next daily schedule slots. */
+  const fillDailySlots = async (count = 8): Promise<number> => {
+    if (!connected) { toast.error("Connect YouTube first."); return 0; }
+    if (preview || busy || uploading || batchBusy) { toast.error("Finish or discard the current preview first."); return 0; }
+    const list = items.length ? items : await load();
+    const picks = pickViralNewsBatch(list, used, Math.min(8, Math.max(1, count)));
+    if (!picks.length) { toast.error("No unused alerts — press Refresh."); return 0; }
     setBatchBusy(true); setError(null); setLast(null);
     let ok = 0;
     try {
@@ -310,6 +323,7 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
         }
       }
       toast.success(ok ? `${ok} Short(s) scheduled into daily slots.` : "No Shorts uploaded.");
+      return ok;
     } finally {
       setBatchBusy(false); setBusy(null); setStep(""); setSub(0);
     }
@@ -319,6 +333,7 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
 
   return (
     <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-card sm:p-5">
+      <DailyAutoBar kind="job" connected={connected} locked={locked} onRun={(n) => fillDailySlots(n)} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-base font-semibold sm:text-lg"><Newspaper className="size-5 shrink-0" /> Breaking Job & Exam Alerts</h2>
         <Button size="sm" variant="outline" onClick={load} disabled={loading || locked}>{loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Refresh</Button>
@@ -415,7 +430,7 @@ export function NewsAlertsPanel({ connected }: { connected: boolean }) {
         </Select>
         <Input className="w-full sm:w-40" value={brand} maxLength={40} placeholder="Channel name" aria-label="Channel name on video" disabled={locked} onChange={(e) => { setBrand(e.target.value); localStorage.setItem(BRAND_KEY, e.target.value); }} />
         <Button variant="live" className="w-full sm:w-auto" onClick={auto} disabled={locked || !items.length}><Zap /> 1-Click Viral (preview)</Button>
-        <Button variant="hero" className="w-full sm:w-auto" onClick={() => void fillDailySlots()} disabled={locked || !items.length}>
+        <Button variant="hero" className="w-full sm:w-auto" onClick={() => void fillDailySlots(8)} disabled={locked || !items.length}>
           {batchBusy ? <Loader2 className="animate-spin" /> : <CalendarDays />} Fill 8 daily slots
         </Button>
       </div>

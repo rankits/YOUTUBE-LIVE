@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VoiceSelectItems } from "@/components/app/VoiceOptions";
+import { DailyAutoBar } from "@/components/app/DailyAutoBar";
 import { cn } from "@/lib/utils";
 
 const USED_KEY = "viral-shorts-used";
@@ -140,7 +141,7 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
     setVoiceId(valid ? savedVoice! : agentMatch || voiceOptions[0]?.id || "");
   }, [voiceProvider, voiceOptions, selectedAgent?.voice_id]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ViralTopic[]> => {
     setLoading(true);
     setError(null);
     const cacheKey = `${CACHE_KEY}-${region}`;
@@ -157,17 +158,25 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
         setItems(r.items);
         setStatus(`Updated ${format(new Date(), "h:mm a")} · ${r.sources}`);
         localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), items: r.items }));
-      } else if (cached?.items.length) {
+        return r.items;
+      }
+      if (cached?.items.length) {
         setItems(cached.items);
         setStatus(`Saved topics from ${format(cached.at, "d MMM, h:mm a")}`);
         setError(r.error);
-      } else setError(r.error);
+        return cached.items;
+      }
+      setError(r.error);
+      return [];
     } catch (e) {
       if (cached?.items.length) {
         setItems(cached.items);
         setStatus(`Saved topics from ${format(cached.at, "d MMM, h:mm a")}`);
+        setError(`Could not refresh topics (${e instanceof Error ? e.message : String(e)}).`);
+        return cached.items;
       }
       setError(`Could not refresh topics (${e instanceof Error ? e.message : String(e)}).`);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -350,19 +359,20 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
     void renderPreview(pick);
   };
 
-  const fillDailySlots = async () => {
+  const fillDailySlots = async (count = 8): Promise<number> => {
     if (!connected) {
       toast.error("Connect YouTube first.");
-      return;
+      return 0;
     }
-    if (preview || busy || uploading) {
+    if (preview || busy || uploading || batchBusy) {
       toast.error("Finish or discard the current preview first.");
-      return;
+      return 0;
     }
-    const picks = pickViralTopicBatch(items, used, 8);
+    const list = items.length ? items : await load();
+    const picks = pickViralTopicBatch(list, used, Math.min(8, Math.max(1, count)));
     if (!picks.length) {
       toast.error("No unused topics — press Refresh.");
-      return;
+      return 0;
     }
     setBatchBusy(true);
     setError(null);
@@ -384,6 +394,7 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
         }
       }
       toast.success(ok ? `${ok} Short(s) scheduled into daily slots.` : "No Shorts uploaded.");
+      return ok;
     } finally {
       setBatchBusy(false);
       setBusy(null);
@@ -394,6 +405,7 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
 
   return (
     <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-card sm:p-5">
+      <DailyAutoBar kind="viral" connected={connected} locked={locked} onRun={(n) => fillDailySlots(n)} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-base font-semibold sm:text-lg">
           <Flame className="size-5 shrink-0 text-primary" /> Viral Topics
@@ -539,7 +551,7 @@ export function ViralTopicsPanel({ connected }: { connected: boolean }) {
         <Button variant="live" className="w-full sm:w-auto" onClick={auto} disabled={locked || !items.length}>
           <Zap /> 1-Click Viral
         </Button>
-        <Button variant="hero" className="w-full sm:w-auto" onClick={() => void fillDailySlots()} disabled={locked || !items.length}>
+        <Button variant="hero" className="w-full sm:w-auto" onClick={() => void fillDailySlots(8)} disabled={locked || !items.length}>
           {batchBusy ? <Loader2 className="animate-spin" /> : <CalendarDays />} Fill 8 daily slots
         </Button>
       </div>
