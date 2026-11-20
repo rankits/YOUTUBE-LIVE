@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Loader2, Plus, Radio, Trash2 } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Radio, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { formatOffset, type LiveHighlight } from "@/lib/live-monitor-rules";
 import { analyzeCaptionText, pollLiveHighlights, resolveLiveStream } from "@/backend/live-monitor.functions";
+import { freshToken } from "@/lib/fresh-token";
+
+type HighlightRow = LiveHighlight & { previewUrl?: string | null };
 
 type Session = {
   id: string;
@@ -22,14 +25,25 @@ type Session = {
   actualStartTime: string | null;
   concurrentViewers: number | null;
   note: string;
-  highlights: (LiveHighlight & { previewUrl?: string | null })[];
+  highlights: HighlightRow[];
   messageCount: number;
   status: "idle" | "polling" | "error" | "ended";
   error?: string;
   lastPollAt?: string;
+  /** Local recording the user owns / has rights to cut Shorts from. */
+  recording?: File | null;
+  rightsOk?: boolean;
 };
 
-type HighlightRow = LiveHighlight & { previewUrl?: string | null };
+type DraftState = {
+  sessionId: string;
+  highlight: HighlightRow;
+  duration: 15 | 30 | 60;
+  progress: number;
+  blob?: Blob;
+  url?: string;
+  uploading?: boolean;
+};
 
 export function LiveMonitorPanel({ connected }: { connected: boolean }) {
   const [url, setUrl] = useState("");
@@ -38,6 +52,8 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
   const [captions, setCaptions] = useState("");
   const [captionVideoId, setCaptionVideoId] = useState("");
   const [captionHits, setCaptionHits] = useState<HighlightRow[]>([]);
+  const [draft, setDraft] = useState<DraftState | null>(null);
+  const [clipBusy, setClipBusy] = useState(false);
   const pageTokens = useRef<Record<string, string | null>>({});
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -170,6 +186,68 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
     delete pageTokens.current[id];
   };
 
+  const canCut = (s: Session) => !!(s.recording && s.rightsOk);
+
+  const openDraft = (sessionId: string, highlight: HighlightRow) => {
+    const s = sessions.find((x) => x.id === sessionId);
+    if (!s?.recording || !s.rightsOk) {
+      toast.error("Attach your recording first and confirm you have rights to use it.");
+      return;
+    }
+    if (draft?.url) URL.revokeObjectURL(draft.url);
+    setDraft({ sessionId, highlight, duration: 15, progress: 0 });
+  };
+
+  const makeClip = async () => {
+    if (!draft) return;
+    const s = sessions.find((x) => x.id === draft.sessionId);
+    if (!s?.recording) return;
+    setClipBusy(true);
+    try {
+      const { renderClipFromVideo } = await import("@/lib/clip-from-video");
+      const startSec = Math.max(0, (draft.highlight.offsetSec ?? 0) - 2);
+      const blob = await renderClipFromVideo({
+        file: s.recording,
+        startSec,
+        durationSec: draft.duration,
+        headline: draft.highlight.title,
+        brand: s.channelTitle || "HIGHLIGHT",
+        onProgress: (f) => setDraft((d) => (d ? { ...d, progress: f } : d)),
+      });
+      if (draft.url) URL.revokeObjectURL(draft.url);
+      setDraft((d) => (d ? { ...d, blob, url: URL.createObjectURL(blob), progress: 1 } : d));
+      toast.success("Short draft ready — preview, then upload.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setClipBusy(false);
+    }
+  };
+
+  const uploadClip = async () => {
+    if (!draft?.blob || !connected) return;
+    const s = sessions.find((x) => x.id === draft.sessionId);
+    setDraft((d) => (d ? { ...d, uploading: true } : d));
+    try {
+      const token = await freshToken();
+      const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
+      const title = `${draft.highlight.title} #Shorts`.slice(0, 100);
+      const qs = new URLSearchParams({
+        title,
+        description: `${draft.highlight.description}\n\nFrom: ${s?.title ?? ""}\n#Shorts #Highlights`,
+        privacy: "public",
+        tags: "shorts,highlights,live",
+      });
+      const j = await uploadShortVideo({ token, blob: draft.blob, searchParams: qs, signal: AbortSignal.timeout(180_000) });
+      toast.success("Uploaded to YouTube Shorts");
+      window.open(j.url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDraft((d) => (d ? { ...d, uploading: false } : d));
+    }
+  };
+
   return (
     <div className="space-y-8">
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
@@ -225,6 +303,33 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
             </a>
           </div>
 
+          <div className="space-y-2 rounded-xl border border-dashed p-3">
+            <Label className="text-sm font-medium">Your recording (required to cut a Short)</Label>
+            <p className="text-xs text-muted-foreground">
+              We never download the live URL. Upload a file you own or have permission to use (OBS recording, your VOD download, etc.).
+            </p>
+            <Input
+              type="file"
+              accept="video/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setSessions((all) => all.map((x) => (x.id === s.id ? { ...x, recording: file } : x)));
+              }}
+            />
+            {s.recording && <p className="text-xs text-muted-foreground">Attached: {s.recording.name}</p>}
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!s.rightsOk}
+                onChange={(e) =>
+                  setSessions((all) => all.map((x) => (x.id === s.id ? { ...x, rightsOk: e.target.checked } : x)))
+                }
+              />
+              <span>I own this recording or have permission to edit and upload clips from it.</span>
+            </label>
+          </div>
+
           <ul className="divide-y rounded-xl border">
             {s.highlights.length === 0 && (
               <li className="p-3 text-sm text-muted-foreground">No highlights yet — waiting for chat signals…</li>
@@ -247,29 +352,60 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
                       </a>
                     </Button>
                   )}
-                  {s.canDraftClip ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        toast.message("Own-channel draft", {
-                          description: "Use this timestamp on your VOD / recording. Full auto-cut ships next once VOD is ready.",
-                        })
-                      }
-                    >
-                      Draft Short
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="ghost" disabled title="Only for your channel or uploaded media">
-                      No re-upload
-                    </Button>
-                  )}
+                  <Button size="sm" variant="secondary" disabled={!canCut(s)} onClick={() => openDraft(s.id, h)}>
+                    Cut Short
+                  </Button>
                 </div>
               </li>
             ))}
           </ul>
         </section>
       ))}
+
+      {draft && (
+        <section className="space-y-3 rounded-2xl border border-primary/30 bg-card p-4 sm:p-5">
+          <h2 className="text-base font-semibold">Cut Short from your recording</h2>
+          <p className="text-sm text-muted-foreground">
+            {draft.highlight.title} · start ~{formatOffset(Math.max(0, (draft.highlight.offsetSec ?? 0) - 2))}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {([15, 30, 60] as const).map((d) => (
+              <Button key={d} size="sm" variant={draft.duration === d ? "default" : "outline"} disabled={clipBusy} onClick={() => setDraft({ ...draft, duration: d })}>
+                {d}s
+              </Button>
+            ))}
+          </div>
+          {(clipBusy || draft.progress > 0) && (
+            <div className="space-y-1">
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-primary transition-all" style={{ width: `${Math.round(draft.progress * 100)}%` }} />
+              </div>
+              <p className="text-xs text-muted-foreground">{clipBusy ? "Recording Short…" : "Ready"}</p>
+            </div>
+          )}
+          {draft.url && (
+            <video src={draft.url} controls playsInline className="mx-auto max-h-[420px] w-full max-w-sm rounded-xl bg-black object-contain" />
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void makeClip()} disabled={clipBusy || draft.uploading}>
+              {clipBusy ? <Loader2 className="animate-spin" /> : <Upload />} {draft.blob ? "Re-cut" : "Make Short"}
+            </Button>
+            <Button variant="default" disabled={!draft.blob || clipBusy || draft.uploading || !connected} onClick={() => void uploadClip()}>
+              {draft.uploading ? <Loader2 className="animate-spin" /> : null} Upload to YouTube
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={clipBusy || draft.uploading}
+              onClick={() => {
+                if (draft.url) URL.revokeObjectURL(draft.url);
+                setDraft(null);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <h2 className="text-base font-semibold">Creator-provided captions / transcript</h2>
