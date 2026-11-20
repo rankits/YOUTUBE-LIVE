@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_authenticated/automation")({
   head: () => ({
     meta: [
       { title: "Daily Automation — Shorts Studio" },
-      { name: "description", content: "Schedule Job and Viral Shorts while this browser tab stays open." },
+      { name: "description", content: "Schedule Job, Viral, and MCQ Shorts while this browser tab stays open." },
     ],
   }),
   component: AutomationPage,
@@ -18,7 +18,7 @@ function AutomationPage() {
     <>
       <PageHeader
         title="Daily Automation"
-        description="Browser-side auto fill for Job Alerts and Viral Topics. Keep the matching page open at your chosen time."
+        description="Browser-side auto fill for Job Alerts, Viral Topics, and MCQ Shorts. Keep the matching page open at your chosen time."
       />
       <Page>
         <div className="mx-auto max-w-2xl space-y-4 rounded-2xl border bg-card p-5">
@@ -27,9 +27,9 @@ function AutomationPage() {
             <h2 className="font-semibold">How it works</h2>
           </div>
           <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
-            <li>Open Job Alerts or Viral Topics.</li>
+            <li>Open Job Alerts, Viral Topics, or YouTube (MCQ Shorts).</li>
             <li>Turn on Daily auto, set time + Shorts/day.</li>
-            <li>Leave that tab open (computer awake). At that time it fills today’s YouTube slots once.</li>
+            <li>Leave that tab open (computer awake). At that time it schedules today’s Shorts once.</li>
             <li>Or press “Run today now” anytime.</li>
           </ol>
           <p className="text-sm text-muted-foreground">
@@ -41,6 +41,9 @@ function AutomationPage() {
             </Button>
             <Button variant="outline" asChild>
               <Link to="/viral-topics">Open Viral Topics</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/youtube">Open MCQ Shorts</Link>
             </Button>
           </div>
         </div>

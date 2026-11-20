@@ -13,6 +13,7 @@ import { SHORT_THEMES, shortThemeForClip, type ShortThemeId } from "@/lib/stage-
 import { pickShuffleTheme } from "@/lib/shuffle-rules";
 import { freshToken } from "@/lib/fresh-token";
 import { QuestionBankPanel } from "@/components/app/QuestionBankPanel";
+import { DailyAutoBar } from "@/components/app/DailyAutoBar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,23 +89,41 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
   }, [showId, listFn]);
   useEffect(() => { setRows([]); reload(); }, [reload]);
 
-  async function run() {
-    if (!bank) return;
+  async function run(opts?: { countOverride?: number; forceSchedule?: boolean }): Promise<number> {
+    // Fresh bank when called from daily auto (state may be stale).
+    let active = bank;
+    if (!active && showId) {
+      try {
+        active = await listFn({ data: { interviewId: showId } });
+        setBank(active);
+      } catch {
+        active = null;
+      }
+    }
+    if (!active) {
+      toast.error("Pick a quiz show with a question bank first.");
+      return 0;
+    }
     try {
       const { assertCanRecordShort } = await import("@/lib/media-record");
       assertCanRecordShort();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "This device cannot record Shorts.");
-      return;
+      return 0;
     }
-    const wanted = mode === "schedule" ? Number(perDay) * Number(days) : Number(count);
-    const pick = bank.pending.slice(0, wanted);
-    if (!pick.length) { toast.error("No new questions left. Generate questions first."); return; }
-    if (mode !== "download" && !connected) { toast.error("Connect a YouTube channel first."); return; }
-    const slots = makeSlots(pick.length, gap === "spread" ? bank.lastScheduled : null);
+    const effectiveMode: Mode = opts?.forceSchedule ? "schedule" : mode;
+    const wanted = opts?.countOverride
+      ?? (effectiveMode === "schedule" ? Number(perDay) * Number(days) : Number(count));
+    const pick = active.pending.slice(0, wanted);
+    if (!pick.length) { toast.error("No new questions left. Generate questions first."); return 0; }
+    if (effectiveMode !== "download" && !connected) { toast.error("Connect a YouTube channel first."); return 0; }
+    const slots =
+      opts?.forceSchedule
+        ? planSlots(pick.length, pick.length, new Date(Date.now() + 60 * 60_000), active.lastScheduled ? new Date(active.lastScheduled) : null)
+        : makeSlots(pick.length, gap === "spread" ? active.lastScheduled : null);
     setErr(null);
     let thumbOff = false;
-    const when = (i: number) => (mode === "schedule" ? ` → ${format(slots[i]!, "d MMM, h:mm a")}` : "");
+    const when = (i: number) => (effectiveMode === "schedule" ? ` → ${format(slots[i]!, "d MMM, h:mm a")}` : "");
     setRows(pick.map((p, i) => ({ label: `Q${p.number}${when(i)}`, state: "wait" })));
     setBusy(true); stop.current = false;
     const upd = (i: number, r: Partial<Row>) => setRows((old) => old.map((o, j) => (j === i ? { ...o, ...r } : o)));
@@ -127,7 +146,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
         upd(i, { state: "voice" }); setSub(0);
         setClock((c) => ({ start: c?.start ?? Date.now(), item: Date.now(), idx: i, total: pick.length }));
         // Shuffle continues across runs (offset by Shorts already made) so the look/voice keeps changing.
-        const n = bank.done + i;
+        const n = active.done + i;
         const picked = themeId === "shuffle" ? pickShuffleTheme(SHORT_THEMES.map((t) => t.id), n) : themeId;
         const palette = shortThemeForClip(picked, p.number + n);
         const clip = await withTimeout(prepFn({ data: { questionId: p.id, ...(voiceMix ? { voiceSlot: n } : {}) } }), 90_000, "Voice step");
@@ -136,7 +155,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
         const image = await imgP;
         void wantImg(i + 1);
         const blob = await withTimeout(renderMcqShort({ exam, image, mcq: clip.mcq, audioUrl: clip.audioUrl, palette, brand, topic: clip.topic, hook: clip.meta.hook, language: clip.language, onProgress: setSub }), 240_000, "Video render");
-        if (mode === "download") {
+        if (effectiveMode === "download") {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
           a.download = `short-q${p.number}.${blob.type?.includes("mp4") ? "mp4" : "webm"}`;
@@ -151,7 +170,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
           description: clip.meta.description,
           privacy: "public",
           tags: clip.meta.tags.join(","),
-          ...(mode === "schedule" ? { publishAt: slots[i]!.toISOString() } : {}),
+          ...(effectiveMode === "schedule" ? { publishAt: slots[i]!.toISOString() } : {}),
         });
         const { uploadShortVideo } = await import("@/lib/youtube-upload-client");
         const j = await uploadShortVideo({
@@ -170,7 +189,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
         });
         let note: string | undefined;
         try {
-          await markFn({ data: { questionId: p.id, url: j.url, publishAt: mode === "schedule" ? slots[i]!.toISOString() : null } });
+          await markFn({ data: { questionId: p.id, url: j.url, publishAt: effectiveMode === "schedule" ? slots[i]!.toISOString() : null } });
         } catch (e) {
           note = `Uploaded, but bank mark failed: ${e instanceof Error ? e.message : String(e)} — may show as pending again.`;
           toast.error("Short uploaded, but could not mark question done", { description: note });
@@ -201,7 +220,8 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
     }
     setBusy(false); setClock(null);
     reload(); loadPool();
-    if (ok) toast.success(mode === "download" ? `${ok} Shorts downloaded` : mode === "schedule" ? `${ok} Shorts scheduled on YouTube` : `${ok} Shorts published on YouTube`);
+    if (ok) toast.success(effectiveMode === "download" ? `${ok} Shorts downloaded` : effectiveMode === "schedule" ? `${ok} Shorts scheduled on YouTube` : `${ok} Shorts published on YouTube`);
+    return ok;
   }
 
   const icon = (r: Row) => r.state === "done" ? <CheckCircle2 className="h-4 w-4 text-success" /> : r.state === "fail" ? <XCircle className="h-4 w-4 text-destructive" /> : r.state === "wait" ? <CalendarClock className="h-4 w-4 text-muted-foreground" /> : <Loader2 className="h-4 w-4 animate-spin text-primary" />;
@@ -231,6 +251,13 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
             <p className="text-sm text-muted-foreground">Pick a quiz show → publish 9:16 Shorts with voice, countdown, and viral titles.</p>
           </div>
         </div>
+
+        <DailyAutoBar
+          kind="mcq"
+          connected={connected}
+          locked={busy}
+          onRun={(n) => run({ countOverride: n, forceSchedule: true })}
+        />
 
         {quiz.length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
@@ -372,14 +399,14 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
               <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
                 <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <span className="flex-1">{err}</span>
-                <Button size="sm" variant="outline" onClick={run} disabled={busy}>Retry</Button>
+                <Button size="sm" variant="outline" onClick={() => void run()} disabled={busy}>Retry</Button>
               </div>
             )}
 
             {busy ? (
               <Button variant="outline" className="w-full sm:w-auto" onClick={() => { stop.current = true; }}><Loader2 className="animate-spin" /> Working… (stop after current)</Button>
             ) : (
-              <Button variant="hero" size="lg" className="w-full sm:w-auto" onClick={run} disabled={!bank || pendingCount === 0 || (mode !== "download" && !connected)}>
+              <Button variant="hero" size="lg" className="w-full sm:w-auto" onClick={() => void run()} disabled={!bank || pendingCount === 0 || (mode !== "download" && !connected)}>
                 {mode === "download" ? <Download /> : mode === "public" ? <Zap /> : <CalendarClock />} {actionLabel}
               </Button>
             )}
