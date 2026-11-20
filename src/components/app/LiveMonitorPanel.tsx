@@ -39,10 +39,14 @@ type DraftState = {
   sessionId: string;
   highlight: HighlightRow;
   duration: 15 | 30 | 60;
+  /** Editable start inside the attached file (seconds). */
+  startSec: number;
+  fileDurationSec: number;
   progress: number;
   blob?: Blob;
   url?: string;
   uploading?: boolean;
+  clamped?: boolean;
 };
 
 export function LiveMonitorPanel({ connected }: { connected: boolean }) {
@@ -188,14 +192,39 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
 
   const canCut = (s: Session) => !!(s.recording && s.rightsOk);
 
-  const openDraft = (sessionId: string, highlight: HighlightRow) => {
+  const openDraft = async (sessionId: string, highlight: HighlightRow) => {
     const s = sessions.find((x) => x.id === sessionId);
     if (!s?.recording || !s.rightsOk) {
       toast.error("Attach your recording first and confirm you have rights to use it.");
       return;
     }
-    if (draft?.url) URL.revokeObjectURL(draft.url);
-    setDraft({ sessionId, highlight, duration: 15, progress: 0 });
+    setClipBusy(true);
+    try {
+      const { clampClipStart, probeVideoDuration } = await import("@/lib/clip-from-video");
+      const fileDurationSec = await probeVideoDuration(s.recording);
+      const wanted = Math.max(0, (highlight.offsetSec ?? 0) - 2);
+      const startSec = clampClipStart(wanted, fileDurationSec, 15);
+      const clamped = wanted > fileDurationSec - 1;
+      if (draft?.url) URL.revokeObjectURL(draft.url);
+      setDraft({
+        sessionId,
+        highlight,
+        duration: 15,
+        startSec,
+        fileDurationSec,
+        progress: 0,
+        clamped,
+      });
+      if (clamped) {
+        toast.message("Highlight time is past this file", {
+          description: `Live timestamp was ${Math.floor(wanted)}s but file is only ${Math.floor(fileDurationSec)}s. Adjust Start, then Make Short.`,
+        });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setClipBusy(false);
+    }
   };
 
   const makeClip = async () => {
@@ -204,8 +233,8 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
     if (!s?.recording) return;
     setClipBusy(true);
     try {
-      const { renderClipFromVideo } = await import("@/lib/clip-from-video");
-      const startSec = Math.max(0, (draft.highlight.offsetSec ?? 0) - 2);
+      const { clampClipStart, renderClipFromVideo } = await import("@/lib/clip-from-video");
+      const startSec = clampClipStart(draft.startSec, draft.fileDurationSec, draft.duration);
       const blob = await renderClipFromVideo({
         file: s.recording,
         startSec,
@@ -215,7 +244,7 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
         onProgress: (f) => setDraft((d) => (d ? { ...d, progress: f } : d)),
       });
       if (draft.url) URL.revokeObjectURL(draft.url);
-      setDraft((d) => (d ? { ...d, blob, url: URL.createObjectURL(blob), progress: 1 } : d));
+      setDraft((d) => (d ? { ...d, blob, url: URL.createObjectURL(blob), progress: 1, startSec } : d));
       toast.success("Short draft ready — preview, then upload.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -352,7 +381,7 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
                       </a>
                     </Button>
                   )}
-                  <Button size="sm" variant="secondary" disabled={!canCut(s)} onClick={() => openDraft(s.id, h)}>
+                  <Button size="sm" variant="secondary" disabled={!canCut(s) || clipBusy} onClick={() => void openDraft(s.id, h)}>
                     Cut Short
                   </Button>
                 </div>
@@ -366,14 +395,54 @@ export function LiveMonitorPanel({ connected }: { connected: boolean }) {
         <section className="space-y-3 rounded-2xl border border-primary/30 bg-card p-4 sm:p-5">
           <h2 className="text-base font-semibold">Cut Short from your recording</h2>
           <p className="text-sm text-muted-foreground">
-            {draft.highlight.title} · start ~{formatOffset(Math.max(0, (draft.highlight.offsetSec ?? 0) - 2))}
+            {draft.highlight.title}
+            {draft.clamped && " · live timestamp was past this file — set Start manually"}
           </p>
-          <div className="flex flex-wrap gap-2">
-            {([15, 30, 60] as const).map((d) => (
-              <Button key={d} size="sm" variant={draft.duration === d ? "default" : "outline"} disabled={clipBusy} onClick={() => setDraft({ ...draft, duration: d })}>
-                {d}s
-              </Button>
-            ))}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Start in file (seconds)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={Math.max(0, Math.floor(draft.fileDurationSec - 1))}
+                step={1}
+                value={Math.round(draft.startSec)}
+                disabled={clipBusy || draft.uploading}
+                onChange={(e) => {
+                  if (draft.url) URL.revokeObjectURL(draft.url);
+                  setDraft({
+                    ...draft,
+                    startSec: Math.max(0, Number(e.target.value) || 0),
+                    blob: undefined,
+                    url: undefined,
+                    progress: 0,
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                File length: {formatOffset(Math.floor(draft.fileDurationSec))} · live hint was{" "}
+                {formatOffset(draft.highlight.offsetSec)}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label>Length</Label>
+              <div className="flex flex-wrap gap-2">
+                {([15, 30, 60] as const).map((d) => (
+                  <Button
+                    key={d}
+                    size="sm"
+                    variant={draft.duration === d ? "default" : "outline"}
+                    disabled={clipBusy}
+                    onClick={() => {
+                      if (draft.url) URL.revokeObjectURL(draft.url);
+                      setDraft({ ...draft, duration: d, blob: undefined, url: undefined, progress: 0 });
+                    }}
+                  >
+                    {d}s
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
           {(clipBusy || draft.progress > 0) && (
             <div className="space-y-1">

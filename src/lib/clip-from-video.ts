@@ -38,6 +38,24 @@ function loadVideo(file: File | Blob): Promise<HTMLVideoElement> {
   });
 }
 
+/** Duration in seconds for a local video file. */
+export async function probeVideoDuration(file: File | Blob): Promise<number> {
+  const v = await loadVideo(file);
+  const d = v.duration;
+  URL.revokeObjectURL(v.src);
+  v.removeAttribute("src");
+  v.load();
+  if (!Number.isFinite(d) || d < 1) throw new Error("Video has no readable duration.");
+  return d;
+}
+
+/** Clamp clip start so it always fits inside the file. */
+export function clampClipStart(startSec: number, fileDuration: number, clipDuration: number) {
+  const dur = Math.min(90, Math.max(8, clipDuration));
+  const maxStart = Math.max(0, fileDuration - Math.min(dur, fileDuration));
+  return Math.min(Math.max(0, startSec), maxStart);
+}
+
 function drawCover(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
@@ -100,7 +118,6 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 export async function renderClipFromVideo(o: ClipFromVideoOpts): Promise<Blob> {
   assertCanRecordShort();
   const durationSec = Math.min(90, Math.max(8, o.durationSec));
-  const startSec = Math.max(0, o.startSec);
 
   return withScreenWakeLock(async () => {
     const profile = shortRenderProfile();
@@ -111,11 +128,10 @@ export async function renderClipFromVideo(o: ClipFromVideoOpts): Promise<Blob> {
       if (!Number.isFinite(video.duration) || video.duration < 1) {
         throw new Error("Video has no readable duration.");
       }
-      if (startSec >= video.duration - 1) {
-        throw new Error("Start time is past the end of this recording.");
-      }
+      // Chat timestamps are from the full live; local files are often shorter clips — always clamp.
+      const startSec = clampClipStart(o.startSec, video.duration, durationSec);
       const end = Math.min(video.duration, startSec + durationSec);
-      const clipDur = end - startSec;
+      const clipDur = Math.max(1, end - startSec);
 
       const canvas = document.createElement("canvas");
       canvas.width = profile.width;
