@@ -1,10 +1,11 @@
 import { cleanHashtags, cleanTags } from "./promo-rules";
 // YouTube Shorts rules (pure, tested): clip timeline and upload metadata.
-export const SHORT_PAUSE_S = 2;
-export const SHORT_TAIL_S = 1.5;
+/** Silent countdown between question and answer — keep tight for retention. */
+export const SHORT_PAUSE_S = 1;
+export const SHORT_TAIL_S = 0.5;
 export const SHORT_MAX_S = 180;
 /** Seconds the bold hook poster stays on screen before the voice starts (it is also the feed thumbnail frame). */
-export const SHORT_HOOK_S = 1.2;
+export const SHORT_HOOK_S = 0.8;
 
 /** Hook poster first, then question audio, a silent countdown, then the answer audio. split/revealTime count from the end of the hook. */
 export function shortTimeline(audioSeconds: number, revealAt: number) {

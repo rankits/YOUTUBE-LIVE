@@ -3,11 +3,11 @@ import { ensureShortsTitle, shortTimeline, shortTitle } from "./shorts-rules";
 import { intervalSlots, isProjectQuotaError, poolLeft, quotaDay, usableSlots } from "./shorts-rules";
 
 describe("shorts rules", () => {
-  it("inserts a 2 second countdown before the answer", () => {
-    const t = shortTimeline(30, 0.6);
-    expect(t.split).toBe(18);
-    expect(t.revealTime).toBe(20);
-    expect(t.total).toBeCloseTo(33.5 + 1.2);
+  it("inserts a 1 second countdown before the answer", () => {
+    const t = shortTimeline(10, 0.6);
+    expect(t.split).toBe(6);
+    expect(t.revealTime).toBe(7);
+    expect(t.total).toBeCloseTo(10 + 1 + 0.5 + 0.8);
     expect(t.fits).toBe(true);
   });
   it("rejects clips longer than 3 minutes", () => {
@@ -51,9 +51,9 @@ import { buildShortMeta, revealsAnswer, SHORT_HOOK_S } from "./shorts-rules";
 describe("short metadata", () => {
   const base = { question: "Bharat ka rashtriya pashu kaun hai?", options: ["Sher", "Baagh", "Haathi", "Mor"], answer: 1, topic: "General Knowledge", number: 3, language: "hinglish" };
   it("starts with the hook poster before the voice", () => {
-    const t = shortTimeline(30, 0.6);
+    const t = shortTimeline(10, 0.6);
     expect(t.start).toBe(SHORT_HOOK_S);
-    expect(t.total).toBeCloseTo(30 + 2 + 1.5 + SHORT_HOOK_S);
+    expect(t.total).toBeCloseTo(10 + 1 + 0.5 + SHORT_HOOK_S);
   });
   it("never uses an AI title that gives away the answer", () => {
     expect(revealsAnswer("Baagh hi hai rashtriya pashu!", "Baagh")).toBe(true);

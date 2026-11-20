@@ -33,7 +33,7 @@ const GAPS = [["15", "Every 15 min"], ["30", "Every 30 min"], ["60", "Every 1 ho
 const toLocal = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm");
 const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
   Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${label} timed out (${Math.round(ms / 1000)}s) — network or server was slow, press Retry.`)), ms))]);
-const AVG_SHORT_S = 30;
+const AVG_SHORT_S = 12;
 function friendly(msg: string): string {
   if (/timeout/i.test(msg)) return msg;
   if (/quota|uploadLimitExceeded|exceeded the number of videos/i.test(msg)) return "Today's YouTube upload limit is used up. Try again after the daily reset (~1:30 PM IST).";
@@ -385,7 +385,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
               const step = rows[clock.idx]?.state === "voice" ? "[1/3] Voice" : rows[clock.idx]?.state === "render" ? "[2/3] Video record" : "[3/3] Upload + thumbnail";
               return <div className="grid grid-cols-3 gap-2 rounded-lg border bg-muted/40 p-2 text-center text-xs"><div><b className="block text-sm">{cur}s / ~{AVG_SHORT_S}s</b>Short {clock.idx + 1}/{clock.total}</div><div><b className="block text-sm">{step}</b>Current step</div><div><b className="block text-sm">~{Math.floor(leftSec / 60)}m {leftSec % 60}s</b>Time left ({all}s elapsed)</div></div>;
             })()}
-            {busy && <><Progress value={sub * 100} /><p className="text-xs text-muted-foreground">Keep this tab open — each Short records in real time (~30–50 sec each).</p></>}
+            {busy && <><Progress value={sub * 100} /><p className="text-xs text-muted-foreground">Keep this tab open — each Short records in real time (~10–15 sec each).</p></>}
 
             {rows.length > 0 && (
               <ul className="max-h-80 space-y-2 overflow-y-auto pr-1 text-sm">

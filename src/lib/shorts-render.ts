@@ -187,28 +187,22 @@ export function drawShortFrame(ctx: CanvasRenderingContext2D, o: { mcq: McqVisua
   ctx.stroke();
   ctx.fillStyle = p.text;
   ctx.font = ff(`700 ${q.size}px Sora, sans-serif`);
-  const qDur = o.split * 0.32;
-  let used = 0;
-  const qTotal = q.lines.join("").length || 1;
+  // Show full question immediately (no typewriter) for fast Shorts.
   q.lines.forEach((l, i) => {
-    const lt = typed(l, t, (used / qTotal) * qDur, (l.length / qTotal) * qDur);
-    used += l.length;
     const ly = y + 45 + q.size * 0.6 + i * q.size * 1.25;
-    ctx.fillText(lt, W / 2, ly);
+    ctx.fillText(l, W / 2, ly);
   });
 
-  // Options (2x2), appear one by one during the question
+  // Options (2x2) — all visible from frame 1 (no staggered appear).
   const revealed = t >= o.revealTime;
   const top = y + qh + (img ? 40 : 60);
   const ow = 465;
   const oh = img ? 200 : 260;
   mcq.options.forEach((opt, i) => {
-    const appear = Math.min(1, Math.max(0, (t - (o.split * (0.35 + i * 0.15))) / 0.4));
-    if (appear <= 0) return;
     const x = 60 + (i % 2) * (ow + 30);
     const y = top + Math.floor(i / 2) * (oh + 30);
     const correct = revealed && i === mcq.answer;
-    ctx.globalAlpha = appear * (revealed && !correct ? 0.45 : 1);
+    ctx.globalAlpha = revealed && !correct ? 0.45 : 1;
     ctx.fillStyle = correct ? p.success : p.card;
     rr(ctx, x, y, ow, oh, 30);
     ctx.fill();
@@ -225,8 +219,7 @@ export function drawShortFrame(ctx: CanvasRenderingContext2D, o: { mcq: McqVisua
     const f = fitText(ctx, opt, ow - 50, 3, 40, 600);
     ctx.fillStyle = correct ? p.bg2 : p.text;
     ctx.font = ff(`600 ${f.size}px Manrope, sans-serif`);
-    const ot = (s: string) => typed(s, t, o.split * (0.35 + i * 0.15), 0.6);
-    f.lines.forEach((l, k) => ctx.fillText(ot(l), x + ow / 2, y + oh * 0.58 + (k - (f.lines.length - 1) / 2) * f.size * 1.2));
+    f.lines.forEach((l, k) => ctx.fillText(l, x + ow / 2, y + oh * 0.58 + (k - (f.lines.length - 1) / 2) * f.size * 1.2));
     ctx.globalAlpha = 1;
     if (HAND && correct) {
       // marker circle drawn around the right answer
@@ -583,16 +576,14 @@ function drawViralFrame(ctx: CanvasRenderingContext2D, o: FrameOpts) {
   q.lines.forEach((l, i) => drawRichLine(ctx, l, W / 2, y + 42 + q.size * 0.62 + i * q.size * 1.22, keys, V.navy));
   y += qh + 40;
 
-  // Pill options (stacked) + question-mark / countdown column on the right
+  // Pill options (stacked) — all visible from frame 1 + countdown column on the right
   const revealed = t >= o.revealTime;
   const ow = 740, oh = img ? 112 : 140, gap = 22;
   mcq.options.forEach((opt, i) => {
-    const a = clamp01((t - o.split * (0.3 + i * 0.12)) / 0.35);
-    if (a <= 0) return;
-    const x = 50 - (1 - a) * 90;
+    const x = 50;
     const oy = y + i * (oh + gap);
     const correct = revealed && i === mcq.answer;
-    ctx.globalAlpha = a * (revealed && !correct ? 0.5 : 1);
+    ctx.globalAlpha = revealed && !correct ? 0.5 : 1;
     ctx.fillStyle = correct ? V.greenDark : "#1e40af";
     rr(ctx, x, oy + 8, ow, oh, oh / 2);
     ctx.fill();

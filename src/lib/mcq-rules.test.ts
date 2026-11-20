@@ -15,8 +15,11 @@ describe("mcq rules", () => {
   it("speaks the correct option only after the question part", () => {
     const { speech, revealAt } = composeMcqSpeech({ ...parseMcq(base)!, number: 1 }, "english");
     const cut = Math.round(speech.length * revealAt);
-    expect(speech.slice(0, cut)).not.toContain("correct answer");
-    expect(speech.slice(cut)).toContain("option B, Delhi");
+    expect(speech.slice(0, cut).toLowerCase()).not.toContain("correct answer");
+    expect(speech.slice(cut)).toMatch(/Correct answer:\s*B,\s*Delhi/i);
+    expect(speech.slice(0, cut)).toContain("A Mumbai");
+    expect(speech).not.toContain("Question number");
+    expect(speech).not.toContain("Delhi is the capital");
   });
 });
 

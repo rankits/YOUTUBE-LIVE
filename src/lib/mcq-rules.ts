@@ -12,7 +12,8 @@ export type McqVisual = {
   revealAt: number;
 };
 
-export const MCQ_PAUSE_MS = 2000;
+/** Silent beat between question and answer on Shorts (keep short for retention). */
+export const MCQ_PAUSE_MS = 1000;
 export const LETTERS = ["A", "B", "C", "D"] as const;
 
 const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -30,16 +31,20 @@ export function parseMcq(obj: unknown): Omit<McqVisual, "type" | "number" | "rev
 }
 
 const WORDS = {
-  hindi: { q: "प्रश्न नंबर", opt: "ऑप्शन", think: "सोचिए... आपका जवाब क्या है?", ans: "सही जवाब है ऑप्शन" },
-  hinglish: { q: "Question number", opt: "Option", think: "Sochiye... aapka jawab kya hai?", ans: "Sahi jawab hai option" },
-  english: { q: "Question number", opt: "Option", think: "Think... what is your answer?", ans: "The correct answer is option" },
+  hindi: { think: "जल्दी सोचो!", ans: "सही जवाब" },
+  hinglish: { think: "Jaldi socho!", ans: "Sahi jawab" },
+  english: { think: "Quick — what's your answer?", ans: "Correct answer" },
 } as const;
 
-/** Builds the spoken script and where (as a fraction) the answer part starts. */
+/**
+ * Compact Shorts script (~10–15s): question + A/B/C/D labels, then answer only.
+ * Options are also shown on screen immediately — no long read / no explanation.
+ */
 export function composeMcqSpeech(mcq: Omit<McqVisual, "type" | "revealAt">, language: string): { speech: string; revealAt: number } {
   const w = WORDS[language as keyof typeof WORDS] ?? WORDS.english;
-  const ask = `${w.q} ${mcq.number}. ${mcq.question} ${mcq.options.map((o, i) => `${w.opt} ${LETTERS[i]}: ${o}.`).join(" ")} ${w.think}`;
-  const reveal = `${w.ans} ${LETTERS[mcq.answer]}, ${mcq.options[mcq.answer]}. ${mcq.explanation}`.trim();
+  const opts = mcq.options.map((o, i) => `${LETTERS[i]} ${o}`).join(", ");
+  const ask = `${mcq.question} ${opts}. ${w.think}`;
+  const reveal = `${w.ans}: ${LETTERS[mcq.answer]}, ${mcq.options[mcq.answer]}.`;
   const speech = `${ask} ${reveal}`;
   return { speech, revealAt: +(ask.length / speech.length).toFixed(3) };
 }
