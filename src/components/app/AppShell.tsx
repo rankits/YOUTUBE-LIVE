@@ -19,7 +19,6 @@ import {
   Newspaper,
   Flame,
   Radar,
-  CalendarClock,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
