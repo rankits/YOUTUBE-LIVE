@@ -9,7 +9,7 @@ import { listShortQuestions, markShortUploaded, prepareShortClip } from "@/backe
 import { getUploadPool, getYoutubeAuthUrl } from "@/backend/youtube.functions";
 import { API_UPLOADS_PER_DAY, MAX_INSTANT, UPLOADS_PER_PROJECT, intervalSlots, planSlots, poolLeft, type PoolSlot } from "@/lib/shorts-rules";
 import { MAX_BANK } from "@/lib/mcq-rules";
-import { SHORT_THEMES, shortTheme, type ShortThemeId } from "@/lib/stage-themes";
+import { SHORT_THEMES, shortThemeForClip, type ShortThemeId } from "@/lib/stage-themes";
 import { pickShuffleTheme } from "@/lib/shuffle-rules";
 import { freshToken } from "@/lib/fresh-token";
 import { QuestionBankPanel } from "@/components/app/QuestionBankPanel";
@@ -55,7 +55,7 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
   const [perDay, setPerDay] = useState("10");
   const [days, setDays] = useState("30");
   const [mode, setMode] = useState<Mode>("public");
-  const [themeId, setThemeId] = useState<ShortThemeId | "shuffle">("shuffle");
+  const [themeId, setThemeId] = useState<ShortThemeId | "shuffle">("quizsheet");
   const [voiceMix, setVoiceMix] = useState(true);
   const [brand, setBrand] = useState("AI Interview Arena");
   useEffect(() => { const b = localStorage.getItem("shorts-brand"); if (b) setBrand(b); }, []);
@@ -128,7 +128,8 @@ export function ShortsStudio({ shows, connected }: { shows: Show[]; connected: b
         setClock((c) => ({ start: c?.start ?? Date.now(), item: Date.now(), idx: i, total: pick.length }));
         // Shuffle continues across runs (offset by Shorts already made) so the look/voice keeps changing.
         const n = bank.done + i;
-        const palette = shortTheme(themeId === "shuffle" ? pickShuffleTheme(SHORT_THEMES.map((t) => t.id), n) : themeId).canvas;
+        const picked = themeId === "shuffle" ? pickShuffleTheme(SHORT_THEMES.map((t) => t.id), n) : themeId;
+        const palette = shortThemeForClip(picked, p.number + n);
         const clip = await withTimeout(prepFn({ data: { questionId: p.id, ...(voiceMix ? { voiceSlot: n } : {}) } }), 90_000, "Voice step");
         upd(i, { state: "render", title: clip.meta.title });
         const { renderMcqShort } = await import("@/lib/shorts-render");

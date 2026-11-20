@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { McqVisual } from "@/lib/mcq-rules";
 import { buildShortMeta, planSlots } from "@/lib/shorts-rules";
-import { SHORT_THEMES, shortTheme } from "@/lib/stage-themes";
+import { SHORT_THEMES, shortThemeForClip, type ShortThemeId } from "@/lib/stage-themes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ export function BatchShortsDialog({ items, theme }: { items: Item[]; theme?: str
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(String(Math.min(5, items.length)));
   const [start, setStart] = useState(0);
-  const [themeId, setThemeId] = useState(shortTheme(theme).id);
+  const [themeId, setThemeId] = useState<ShortThemeId>("quizsheet");
   const [brand, setBrand] = useState("AI Interview Arena");
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
@@ -44,7 +44,7 @@ export function BatchShortsDialog({ items, theme }: { items: Item[]; theme?: str
         if (!data?.signedUrl) throw new Error("Voice clip missing");
         const { renderMcqShort } = await import("@/lib/shorts-render");
         const meta = buildShortMeta({ question: p.mcq.question, options: p.mcq.options, answer: p.mcq.answer, topic: p.topic, number: p.mcq.number, language: "english" });
-        const blob = await renderMcqShort({ mcq: p.mcq, audioUrl: data.signedUrl, palette: shortTheme(themeId).canvas, brand, topic: p.topic, hook: meta.hook, onProgress: setSub });
+        const blob = await renderMcqShort({ mcq: p.mcq, audioUrl: data.signedUrl, palette: shortThemeForClip(themeId, p.mcq.number), brand, topic: p.topic, hook: meta.hook, onProgress: setSub });
         upd(i, { state: "upload" });
         const { data: s } = await supabase.auth.getSession();
         const qs = new URLSearchParams({ title: meta.title, description: meta.description, privacy: "public", tags: meta.tags.join(","), publishAt: slots[i]!.toISOString() });

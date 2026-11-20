@@ -4,7 +4,7 @@ import { Loader2, Smartphone, Upload, Download, ExternalLink } from "lucide-reac
 import { supabase } from "@/integrations/supabase/client";
 import type { McqVisual } from "@/lib/mcq-rules";
 import { buildShortMeta } from "@/lib/shorts-rules";
-import { SHORT_THEMES, shortTheme } from "@/lib/stage-themes";
+import { SHORT_THEMES, shortThemeForClip, type ShortThemeId } from "@/lib/stage-themes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 /** Turns one quiz question into a 9:16 YouTube Short and uploads it to the connected channel. */
 export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual; audioPath: string; topic: string; theme?: string | undefined }) {
   const [open, setOpen] = useState(false);
-  const [themeId, setThemeId] = useState(shortTheme(theme).id);
+  const [themeId, setThemeId] = useState<ShortThemeId>("quizsheet");
   const [brand, setBrand] = useState("AI Interview Arena");
   const [meta] = useState(() => buildShortMeta({ question: mcq.question, options: mcq.options, answer: mcq.answer, topic, number: mcq.number, language: "english" }));
   const [title, setTitle] = useState(meta.title);
@@ -36,7 +36,7 @@ export function ShortsDialog({ mcq, audioPath, topic, theme }: { mcq: McqVisual;
       const { data } = await supabase.storage.from("interview-audio").createSignedUrl(audioPath, 600);
       if (!data?.signedUrl) throw new Error("Voice clip for this question is missing.");
       const { renderMcqShort } = await import("@/lib/shorts-render");
-      const blob = await renderMcqShort({ mcq, audioUrl: data.signedUrl, palette: shortTheme(themeId).canvas, brand, topic, hook: meta.hook, onProgress: setProgress });
+      const blob = await renderMcqShort({ mcq, audioUrl: data.signedUrl, palette: shortThemeForClip(themeId, mcq.number), brand, topic, hook: meta.hook, onProgress: setProgress });
       if (video) URL.revokeObjectURL(video.url);
       setVideo({ blob, url: URL.createObjectURL(blob) });
     } catch (e) {

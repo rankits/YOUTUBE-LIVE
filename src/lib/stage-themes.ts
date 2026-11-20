@@ -1,7 +1,39 @@
 // Broadcast stage themes. CSS classes live in styles.css; canvas palettes are
 // used by the Shorts renderer, which cannot read CSS variables.
 export type StageThemeId = "studio" | "chalkboard" | "podcast" | "neon" | "whiteboard";
-export type CanvasPalette = { bg1: string; bg2: string; text: string; muted: string; primary: string; card: string; border: string; success: string; hand?: boolean; viral?: boolean };
+export type CanvasPalette = {
+  bg1: string;
+  bg2: string;
+  text: string;
+  muted: string;
+  primary: string;
+  card: string;
+  border: string;
+  success: string;
+  hand?: boolean;
+  viral?: boolean;
+  /** Classic red-banner GK sheet (pastel paper cycles per Short). */
+  quizsheet?: boolean;
+};
+
+/** Light paper colors for the Classic GK sheet — one per Short. */
+export const QUIZSHEET_PAPERS = [
+  "#ffffff", // white
+  "#fff9e6", // light yellow
+  "#f0fff4", // mint
+  "#f0f7ff", // soft blue
+  "#fff0f5", // blush
+  "#faf5ff", // lavender
+  "#fff5eb", // peach
+  "#f5fffa", // honeydew
+  "#fefce8", // pale lemon
+  "#ecfeff", // ice cyan
+] as const;
+
+export function quizsheetPaper(seed: number) {
+  const i = Math.abs(Math.floor(seed)) % QUIZSHEET_PAPERS.length;
+  return QUIZSHEET_PAPERS[i]!;
+}
 
 export const STAGE_THEMES: { id: StageThemeId; label: string; hint: string; canvas: CanvasPalette }[] = [
   { id: "studio", label: "Broadcast Studio", hint: "Default indigo TV studio", canvas: { bg1: "#151a33", bg2: "#272056", text: "#f8fafc", muted: "#a5adc6", primary: "#6d6af7", card: "#232a4d", border: "#353d66", success: "#22c55e" } },
@@ -15,13 +47,37 @@ export function stageTheme(id: unknown) {
   return STAGE_THEMES.find((t) => t.id === id) ?? STAGE_THEMES[0]!;
 }
 
-// Shorts-only looks (no live-stage CSS): the stage themes plus the viral GK quiz poster.
-export type ShortThemeId = StageThemeId | "viral";
+// Shorts-only looks (no live-stage CSS): classic GK sheet + viral + stage themes.
+export type ShortThemeId = StageThemeId | "viral" | "quizsheet";
 export const SHORT_THEMES: { id: ShortThemeId; label: string; hint: string; canvas: CanvasPalette }[] = [
+  {
+    id: "quizsheet",
+    label: "Classic GK Sheet",
+    hint: "Red GENERAL KNOWLEDGE banner, listed A–D, pastel paper changes each Short",
+    canvas: {
+      bg1: "#ffffff",
+      bg2: "#ffffff",
+      text: "#111111",
+      muted: "#444444",
+      primary: "#e10600",
+      card: "#ffffff",
+      border: "#f5c518",
+      success: "#16a34a",
+      quizsheet: true,
+    },
+  },
   { id: "viral", label: "Viral 3D GK (Wooden board)", hint: "Wooden signboard, gold picture card, pill options", canvas: { bg1: "#2e7d6b", bg2: "#0f1f5c", text: "#ffffff", muted: "#dbeafe", primary: "#f5c518", card: "#fffaf0", border: "#1d4ed8", success: "#22c55e", viral: true } },
   ...STAGE_THEMES,
 ];
 
 export function shortTheme(id: unknown) {
   return SHORT_THEMES.find((t) => t.id === id) ?? stageTheme(id);
+}
+
+/** Resolve palette for one Short (pastel paper rotates by question number for quizsheet). */
+export function shortThemeForClip(id: unknown, seed: number): CanvasPalette {
+  const base = shortTheme(id).canvas;
+  if (!base.quizsheet) return base;
+  const paper = quizsheetPaper(seed);
+  return { ...base, bg1: paper, bg2: paper, card: paper };
 }

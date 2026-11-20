@@ -109,6 +109,7 @@ export async function loadShortImage(
 export function drawShortFrame(ctx: CanvasRenderingContext2D, o: { mcq: McqVisual; t: number; split: number; revealTime: number; p: Palette; brand: string; topic: string; exam?: string | undefined; image?: HTMLImageElement | null | undefined }): void {
   const { mcq, t, p } = o;
   HAND = !!p.hand;
+  if (p.quizsheet) return drawQuizsheetFrame(ctx, o);
   if (p.viral) return drawViralFrame(ctx, o);
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, p.bg1);
@@ -700,6 +701,114 @@ function drawViralFrame(ctx: CanvasRenderingContext2D, o: FrameOpts) {
   ctx.fillText(o.brand, W / 2, H - 45);
 }
 
+/** Classic GK sheet: red banner + topic pill + listed A–D on rotating pastel paper. */
+function drawQuizsheetFrame(ctx: CanvasRenderingContext2D, o: FrameOpts) {
+  const { mcq, t, p } = o;
+  const paper = p.bg1 || "#ffffff";
+  const red = "#e10600";
+  const yellow = "#f5c518";
+  const ink = "#111111";
+  const revealed = t >= o.revealTime;
+
+  ctx.fillStyle = paper;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Soft grey circle artefacts (like stamped paper / lens dust on the reference)
+  ctx.fillStyle = "rgba(120,120,120,0.18)";
+  ctx.beginPath();
+  ctx.arc(140, 70, 70, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(230, 55, 42, 0, Math.PI * 2);
+  ctx.fill();
+
+  const headline = (o.exam?.trim() || "GENERAL KNOWLEDGE").toUpperCase().slice(0, 28);
+  ctx.font = ff("900 56px Sora, sans-serif");
+  const hw = Math.min(980, Math.max(520, ctx.measureText(headline).width + 80));
+  ctx.fillStyle = red;
+  rr(ctx, (W - hw) / 2, 70, hw, 100, 18);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = ff("italic 900 52px Sora, sans-serif");
+  ctx.fillText(headline, W / 2, 122);
+
+  const topic = (o.topic || "Quiz").trim().slice(0, 42);
+  ctx.font = ff("800 40px Sora, sans-serif");
+  const tw = Math.min(920, Math.max(280, ctx.measureText(topic).width + 70));
+  ctx.fillStyle = paper;
+  rr(ctx, (W - tw) / 2, 200, tw, 72, 36);
+  ctx.fill();
+  ctx.strokeStyle = yellow;
+  ctx.lineWidth = 5;
+  rr(ctx, (W - tw) / 2, 200, tw, 72, 36);
+  ctx.stroke();
+  ctx.fillStyle = red;
+  ctx.fillText(topic, W / 2, 238);
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(70, 310);
+  ctx.lineTo(W - 70, 310);
+  ctx.stroke();
+
+  // Question — full text immediately
+  const qLabel = `Q${mcq.number}. ${mcq.question}`;
+  const q = fitText(ctx, qLabel, 920, 5, 52, 800);
+  ctx.fillStyle = ink;
+  ctx.font = ff(`800 ${q.size}px Sora, sans-serif`);
+  ctx.textAlign = "left";
+  let y = 380;
+  q.lines.forEach((l, i) => {
+    ctx.fillText(l, 80, y + i * q.size * 1.28);
+  });
+  y += q.lines.length * q.size * 1.28 + 70;
+
+  // Options listed A) B) C) D) — all at once
+  mcq.options.forEach((opt, i) => {
+    const correct = revealed && i === mcq.answer;
+    const line = `${LETTERS[i]}) ${opt}`;
+    const f = fitText(ctx, line, 920, 2, 48, 700);
+    if (correct) {
+      ctx.fillStyle = "rgba(22,163,74,0.18)";
+      rr(ctx, 60, y - f.size * 0.7, 960, f.lines.length * f.size * 1.25 + 28, 16);
+      ctx.fill();
+    }
+    ctx.fillStyle = correct ? "#15803d" : ink;
+    ctx.font = ff(`700 ${f.size}px Sora, sans-serif`);
+    f.lines.forEach((l, k) => ctx.fillText(l, 80, y + k * f.size * 1.25));
+    y += f.lines.length * f.size * 1.25 + 48;
+  });
+
+  // Countdown badge (center-bottom) while waiting for answer
+  ctx.textAlign = "center";
+  if (t >= o.split && !revealed) {
+    const left = Math.max(0, o.revealTime - t);
+    ctx.fillStyle = red;
+    ctx.font = ff("900 90px Sora, sans-serif");
+    ctx.fillText(String(Math.ceil(left)), W / 2, H - 220);
+  } else if (revealed) {
+    ctx.fillStyle = "#15803d";
+    ctx.font = ff("900 44px Sora, sans-serif");
+    ctx.fillText(`✅ Answer: ${LETTERS[mcq.answer]}`, W / 2, H - 220);
+  }
+
+  // Yellow brand stamp — bottom right
+  const brand = (o.brand || "QUIZ").toUpperCase().slice(0, 22);
+  ctx.font = ff("900 34px Sora, sans-serif");
+  const bw = Math.min(520, Math.max(200, ctx.measureText(brand).width + 48));
+  const bh = 70;
+  const bx = W - 60 - bw;
+  const by = H - 60 - bh;
+  ctx.fillStyle = yellow;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = ink;
+  ctx.textAlign = "center";
+  ctx.fillText(brand, bx + bw / 2, by + bh / 2 + 2);
+}
+
 // Fixed high-contrast poster colours (YouTube feed thumbnails need loud yellow/black regardless of theme).
 const HOOK_YELLOW = "#FFD60A";
 const HOOK_INK = "#0B0B0F";
@@ -707,6 +816,19 @@ const HOOK_INK = "#0B0B0F";
 /** First ~1 s of the Short: a loud poster (hook banner + huge question) that YouTube uses as the feed thumbnail. */
 export function drawHookFrame(ctx: CanvasRenderingContext2D, o: { mcq: McqVisual; t: number; p: Palette; brand: string; topic: string; hook: string; footer: string }) {
   const { p } = o;
+  if (p.quizsheet) {
+    // Same sheet look for the thumbnail/hook beat (question + options already on screen).
+    drawQuizsheetFrame(ctx, {
+      mcq: o.mcq,
+      t: 0,
+      split: 99,
+      revealTime: 99,
+      p: o.p,
+      brand: o.brand,
+      topic: o.topic,
+    });
+    return;
+  }
   const g = ctx.createRadialGradient(W / 2, H * 0.45, 80, W / 2, H * 0.45, H * 0.8);
   g.addColorStop(0, p.bg1);
   g.addColorStop(1, HOOK_INK);
